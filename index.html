@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rekap Asistensi Kemiskinan PPPM</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+  <div id="setupNotice" class="setup-notice hidden"></div>
+  <section id="authView" class="auth-shell">
+    <div class="auth-card">
+      <div class="brand-mark">PPPM</div>
+      <p class="eyebrow">SISTEM REKAP DATA</p>
+      <h1>Asistensi Kemiskinan</h1>
+      <p class="muted">Kelola program, target, capaian, dan anggaran dalam satu tempat.</p>
+      <form id="authForm">
+        <label for="email">Email</label>
+        <input id="email" type="email" placeholder="nama@instansi.go.id" required />
+        <label for="password">Kata sandi</label>
+        <input id="password" type="password" placeholder="Minimal 6 karakter" minlength="6" required />
+        <div class="auth-actions">
+          <button type="submit" id="loginBtn" class="btn primary">Masuk</button>
+          <button type="button" id="signupBtn" class="btn secondary">Daftar anggota</button>
+        </div>
+      </form>
+      <p class="small muted">Akun baru menjadi anggota. Admin dapat menetapkan peran melalui Supabase.</p>
+      <p id="authMessage" class="message" role="status"></p>
+    </div>
+  </section>
+
+  <div id="appView" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark small-mark">P</div>
+        <div><strong>PPPM</strong><span>Asistensi Kemiskinan</span></div>
+      </div>
+      <nav>
+        <button class="nav-item active" data-page="dashboard"><span>▦</span> Dashboard</button>
+        <button class="nav-item" data-page="data"><span>▤</span> Data Program</button>
+        <button class="nav-item" data-page="import"><span>⇧</span> Import Data</button>
+        <button class="nav-item" data-page="reports"><span>▥</span> Rekap & Laporan</button>
+        <button class="nav-item admin-only hidden" data-page="users"><span>♙</span> Pengguna</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="user-chip"><div class="avatar" id="userInitial">U</div><div class="user-info"><strong id="userEmail">Pengguna</strong><span id="userRole">Anggota</span></div></div>
+        <button id="logoutBtn" class="btn logout">Keluar</button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div><p class="eyebrow">PPPM · DATA TERPADU</p><h1 id="pageTitle">Dashboard</h1></div>
+        <div class="topbar-right"><span class="status-dot"></span><span>Database online</span></div>
+      </header>
+
+      <section id="page-dashboard" class="page">
+        <div class="welcome-row">
+          <div><h2>Ringkasan program</h2><p class="muted">Pantau data program, target, capaian, dan anggaran.</p></div>
+          <button class="btn primary" data-goto="import">＋ Impor data Excel</button>
+        </div>
+        <div class="filters compact-filters">
+          <label>Tahun
+            <select id="dashboardYear"><option value="">Semua tahun</option><option>2026</option><option>2027</option></select>
+          </label>
+          <label>Perangkat daerah
+            <select id="dashboardAgency"><option value="">Semua perangkat daerah</option></select>
+          </label>
+          <button id="refreshDashboard" class="btn secondary">Perbarui</button>
+        </div>
+        <div class="stats-grid">
+          <article class="stat-card"><div class="stat-icon violet">▤</div><div><p>Total program</p><strong id="statPrograms">0</strong><span>baris data</span></div></article>
+          <article class="stat-card"><div class="stat-icon blue">◎</div><div><p>Total target</p><strong id="statTarget">0</strong><span>akumulasi target numerik</span></div></article>
+          <article class="stat-card budget-card"><div class="stat-icon green">Rp</div><div><p>Total anggaran</p><strong id="statBudget">Rp0</strong><span>rencana anggaran</span></div></article>
+          <article class="stat-card realization-card"><div class="stat-icon orange">↗</div><div><p>Realisasi anggaran</p><strong id="statRealization">Rp0</strong><span id="realizationPct">0% dari anggaran</span></div></article>
+        </div>
+        <div class="content-grid">
+          <article class="panel"><div class="panel-heading"><div><h3>Anggaran per tahun</h3><p class="muted">Total anggaran berdasarkan tahun</p></div></div><div id="yearChart" class="bar-chart empty-state">Belum ada data untuk ditampilkan.</div></article>
+          <article class="panel"><div class="panel-heading"><div><h3>Ringkasan dampak</h3><p class="muted">Jumlah program menurut dampak</p></div></div><div id="impactSummary" class="summary-list empty-state">Belum ada data untuk ditampilkan.</div></article>
+        </div>
+        <article class="panel"><div class="panel-heading"><div><h3>Program terbaru</h3><p class="muted">Lima data yang terakhir diperbarui</p></div><button class="text-button" data-goto="data">Lihat semua →</button></div><div class="table-wrap"><table><thead><tr><th>Tahun</th><th>Perangkat daerah</th><th>Nomenklatur</th><th>Target</th><th>Anggaran</th></tr></thead><tbody id="recentRows"><tr><td colspan="5" class="empty-cell">Belum ada data.</td></tr></tbody></table></div></article>
+      </section>
+
+      <section id="page-data" class="page hidden">
+        <div class="welcome-row"><div><h2>Data program</h2><p class="muted">Cari, filter, tambah, dan perbarui data asistensi.</p></div><button id="addRecordBtn" class="btn primary">＋ Tambah data</button></div>
+        <div class="filters">
+          <label class="search-field">Pencarian<input id="searchInput" type="search" placeholder="Cari program, indikator, atau dinas..." /></label>
+          <label>Tahun<select id="filterYear"><option value="">Semua tahun</option><option>2026</option><option>2027</option></select></label>
+          <label>Dampak<select id="filterImpact"><option value="">Semua dampak</option><option>Langsung</option><option>Tidak Langsung</option></select></label>
+          <label>Perangkat daerah<select id="filterAgency"><option value="">Semua perangkat daerah</option></select></label>
+          <label>Kelompok file Excel<select id="filterBatch"><option value="">Semua kelompok data</option></select></label>
+          <button id="clearFilters" class="btn secondary">Reset</button>
+        </div>
+        <div class="table-meta"><span id="tableCount">0 data</span><div><button id="exportExcelBtn" class="btn secondary">Ekspor Excel</button><button id="exportPdfBtn" class="btn secondary">Ekspor PDF</button></div></div>
+        <div class="panel table-panel"><div class="table-wrap"><table class="data-table"><thead><tr><th>Tahun</th><th>Perangkat daerah</th><th>Nomenklatur</th><th>Indikator</th><th>Target</th><th>Capaian</th><th>Anggaran</th><th>Realisasi</th><th>Sumber / kelompok file</th><th>Aksi</th></tr></thead><tbody id="dataRows"><tr><td colspan="10" class="empty-cell">Memuat data...</td></tr></tbody></table></div></div>
+        <article class="panel" style="margin-top:18px"><div class="panel-heading"><div><h3>Total per Perangkat Daerah / Bidang / Badan</h3><p class="muted">Baris TOTAL dari Excel ditampilkan terpisah dan tidak dicampurkan dengan rincian program.</p></div><span id="agencyTotalsCount" class="muted">0 total ditemukan</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Tahun</th><th>Perangkat daerah / bidang / badan</th><th>Sheet</th><th>Total Target</th><th>Total Capaian</th><th>Total Anggaran</th><th>Total Realisasi Anggaran</th></tr></thead><tbody id="agencyTotalsRows"><tr><td colspan="7" class="empty-cell">Belum ada data total.</td></tr></tbody></table></div></article>
+        <p class="small muted">Data dan total yang ditampilkan mengikuti filter aktif. Ekspor Excel dan PDF akan memisahkan tabel rincian program dan tabel total.</p>
+      </section>
+
+      <section id="page-import" class="page hidden">
+        <div class="welcome-row"><div><h2>Impor data Excel</h2><p class="muted">Setiap file Excel yang diimpor akan disimpan sebagai kelompok tersendiri.</p></div></div>
+        <div class="import-layout">
+          <article class="panel import-panel"><div class="upload-symbol">⇧</div><h3>Unggah file Excel</h3><p class="muted">Pilih file .xlsx atau .xls.</p>
+            <label class="file-drop" for="excelFile"><span>📄</span><strong>Pilih file Excel</strong><small>Format .xlsx atau .xls</small><input id="excelFile" type="file" accept=".xlsx,.xls" /></label>
+            <div id="fileDetails" class="file-details hidden"></div>
+            <label>Pilihan sheet<select id="sheetSelect" disabled><option value="">Pilih file terlebih dahulu</option></select></label>
+            <div class="import-options"><label>Jika data mirip sudah ada<select id="duplicateMode"><option value="skip">Lewati data yang sama</option><option value="insert">Masukkan semua sebagai data baru</option></select></label></div>
+            <button id="previewImportBtn" class="btn secondary full-width" disabled>Pratinjau data</button>
+            <button id="runImportBtn" class="btn primary full-width" disabled>Import ke database</button>
+            <p id="importMessage" class="message"></p>
+          </article>
+
+        </div>
+        <article id="previewPanel" class="panel hidden"><div class="panel-heading"><div><h3>Pratinjau impor</h3><p id="previewSummary" class="muted"></p></div></div><div class="table-wrap"><table><thead><tr><th>Perangkat daerah</th><th>Nomenklatur</th><th>Tahun</th><th>Target</th><th>Anggaran</th><th>Dampak</th></tr></thead><tbody id="previewRows"></tbody></table></div></article>
+      </section>
+
+      <section id="page-reports" class="page hidden">
+        <div class="welcome-row"><div><h2>Rekap & laporan</h2><p class="muted">Ringkasan dapat disaring menurut tahun dan perangkat daerah.</p></div><div><button id="reportExcelBtn" class="btn secondary">Ekspor Excel</button><button id="reportPdfBtn" class="btn primary">Cetak / PDF</button></div></div>
+        <div class="filters"><label>Tahun<select id="reportYear"><option value="">Semua tahun</option><option>2026</option><option>2027</option></select></label><label>Perangkat daerah<select id="reportAgency"><option value="">Semua perangkat daerah</option></select></label><button id="refreshReport" class="btn secondary">Tampilkan rekap</button></div>
+        <p id="reportStatus" class="report-status" aria-live="polite">Menampilkan seluruh data yang tersimpan.</p>
+        <div class="stats-grid report-stats"><article class="stat-card"><div class="stat-icon violet">▤</div><div><p>Jumlah program</p><strong id="reportCount">0</strong></div></article><article class="stat-card"><div class="stat-icon blue">◎</div><div><p>Total target</p><strong id="reportTarget">0</strong></div></article><article class="stat-card budget-card"><div class="stat-icon green">Rp</div><div><p>Total anggaran</p><strong id="reportBudget">Rp0</strong></div></article><article class="stat-card"><div class="stat-icon orange">↗</div><div><p>Total realisasi</p><strong id="reportRealization">Rp0</strong></div></article></div>
+        <article class="panel"><div class="panel-heading"><div><h3>Rekap per perangkat daerah</h3><p class="muted">Perhitungan berdasarkan data yang sudah tersimpan.</p></div></div><div class="table-wrap"><table><thead><tr><th>Perangkat daerah</th><th>Jumlah program</th><th>Total target</th><th>Total anggaran</th><th>Realisasi anggaran</th><th>Realisasi (%)</th></tr></thead><tbody id="reportRows"></tbody></table></div></article>
+        <article class="panel" style="margin-top:18px"><div class="panel-heading"><div><h3>Total dari File Excel</h3><p class="muted">Nilai TOTAL asli yang diambil dari setiap bagian/perangkat daerah/bidang/badan pada file sumber.</p></div></div><div class="table-wrap"><table><thead><tr><th>Tahun</th><th>Perangkat daerah / bidang / badan</th><th>Sheet</th><th>Total Target</th><th>Total Capaian</th><th>Total Anggaran</th><th>Total Realisasi Anggaran</th></tr></thead><tbody id="reportImportedTotalsRows"><tr><td colspan="7" class="empty-cell">Belum ada total dari file Excel.</td></tr></tbody></table></div></article>
+      </section>
+
+      <section id="page-users" class="page hidden">
+        <div class="welcome-row"><div><h2>Pengguna</h2><p class="muted">Admin dapat mengubah peran akun yang sudah terdaftar.</p></div></div>
+        <div class="notice"><strong>Pengaturan admin pertama</strong><p>Daftarkan akun terlebih dahulu, lalu ikuti langkah SQL di README untuk menetapkan admin pertama. Halaman ini menampilkan akun yang profilnya sudah dibuat.</p></div>
+        <article class="panel"><div class="table-wrap"><table><thead><tr><th>Email</th><th>Peran</th><th>Dibuat</th><th>Aksi</th></tr></thead><tbody id="userRows"><tr><td colspan="4" class="empty-cell">Memuat pengguna...</td></tr></tbody></table></div></article>
+        <p id="usersMessage" class="message"></p>
+      </section>
+    </main>
+  </div>
+
+  <div id="recordModal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-heading"><div><p class="eyebrow">FORMULIR PROGRAM</p><h2 id="modalTitle">Tambah data</h2></div><button id="closeModalBtn" class="icon-button" aria-label="Tutup">×</button></div>
+      <form id="recordForm">
+        <input id="recordId" type="hidden" />
+        <div class="form-grid">
+          <label>Tahun *<select id="recordYear" required><option value="2026">2026</option><option value="2027">2027</option></select></label>
+          <label>Perangkat daerah *<input id="recordAgency" list="agencyOptions" required placeholder="Pilih atau ketik nama dinas / badan" autocomplete="off" /><datalist id="agencyOptions"></datalist></label>
+          <label class="span-2">Nomenklatur urusan/program *<textarea id="recordNomenclature" required rows="2"></textarea></label>
+          <label class="span-2">Kinerja<textarea id="recordPerformance" rows="2"></textarea></label>
+          <label class="span-2">Indikator<textarea id="recordIndicator" rows="2"></textarea></label>
+          <label>Satuan<input id="recordUnit" /></label>
+          <label>Dampak<select id="recordImpact"><option value="">Pilih dampak</option><option>Langsung</option><option>Tidak Langsung</option></select></label>
+          <label class="span-2">Strategi<textarea id="recordStrategy" rows="2"></textarea></label>
+          <label>Target<input id="recordTarget" type="number" min="0" step="any" /></label>
+          <label>Capaian<input id="recordAchievement" type="number" min="0" step="any" /></label>
+          <label>Anggaran (Rp)<input id="recordBudget" type="number" min="0" step="any" /></label>
+          <label>Realisasi anggaran (Rp)<input id="recordRealization" type="number" min="0" step="any" /></label>
+          <label>Sasaran<input id="recordTargetGroup" /></label>
+          <label>Lokasi<input id="recordLocation" /></label>
+        </div>
+        <p id="recordMessage" class="message"></p>
+        <div class="modal-actions"><button type="button" id="cancelModalBtn" class="btn secondary">Batal</button><button type="submit" class="btn primary" id="saveRecordBtn">Simpan data</button></div>
+      </form>
+    </div>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
