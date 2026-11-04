@@ -240,17 +240,19 @@
       <td>${number(r.target)}</td><td>${r.capaian===null||r.capaian===undefined?'—':number(r.capaian)}</td><td>${money(r.anggaran)}</td><td>${r.realisasi_anggaran===null||r.realisasi_anggaran===undefined?'—':money(r.realisasi_anggaran)}</td><td>${escapeHtml(r.source_file || 'Data lama / input manual')}</td>
       <td class="action-cell"><button class="action-btn edit" data-edit="${r.id}">Edit</button><button class="action-btn delete" data-delete="${r.id}">Hapus</button></td></tr>`).join('') : '<tr><td colspan="10" class="empty-cell">Data tidak ditemukan.</td></tr>';
     const visibleBatchIds = new Set(state.filtered.map(r => r.import_batch_id).filter(Boolean));
-    const totalFilter = state.importTotals.filter(t =>
-      (!year || String(t.tahun) === year) && (!agency || t.perangkat_daerah === agency) &&
-      (!batch || (batch === '__old__' ? false : t.import_batch_id === batch))
-    );
+    // Total dihitung ulang dari rincian program yang tersimpan, bukan angka TOTAL statis dari Excel.
+    const totalRows = calculateAgencyTotals(state.records.filter(r =>
+      (!year || String(r.tahun) === year) &&
+      (!agency || r.perangkat_daerah === agency) &&
+      (!batch || (batch === '__old__' ? !r.import_batch_id : r.import_batch_id === batch))
+    ));
     const totalsBody = $('agencyTotalsRows');
-    if (totalsBody) totalsBody.innerHTML = totalFilter.length ? totalFilter.map(t => `<tr>
-      <td>${t.tahun}</td><td>${escapeHtml(t.perangkat_daerah)}</td><td>${escapeHtml(t.sumber_sheet || '')}</td>
-      <td>${t.total_target == null ? '—' : number(t.total_target)}</td><td>${t.total_capaian == null ? '—' : number(t.total_capaian)}</td>
-      <td>${t.total_anggaran == null ? '—' : money(t.total_anggaran)}</td><td>${t.total_realisasi == null ? '—' : money(t.total_realisasi)}</td>
-    </tr>`).join('') : '<tr><td colspan="7" class="empty-cell">Belum ada baris TOTAL pada file Excel yang diimpor atau filter tidak cocok.</td></tr>';
-    if ($('agencyTotalsCount')) $('agencyTotalsCount').textContent = `${number(totalFilter.length)} total ditemukan`;
+    if (totalsBody) totalsBody.innerHTML = totalRows.length ? totalRows.map(t => `<tr>
+      <td>${t.tahun}</td><td>${escapeHtml(t.perangkat_daerah)}</td><td>Otomatis dari data program</td>
+      <td>${number(t.total_target)}</td><td>${number(t.total_capaian)}</td>
+      <td>${money(t.total_anggaran)}</td><td>${money(t.total_realisasi)}</td>
+    </tr>`).join('') : '<tr><td colspan="7" class="empty-cell">Belum ada data program untuk dihitung.</td></tr>';
+    if ($('agencyTotalsCount')) $('agencyTotalsCount').textContent = `${number(totalRows.length)} total ditemukan`;
     $('dataRows').querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>openRecordModal(state.records.find(r=>r.id===b.dataset.edit))));
     $('dataRows').querySelectorAll('[data-delete]').forEach(b=>b.addEventListener('click',()=>deleteRecord(b.dataset.delete)));
   }
@@ -554,30 +556,55 @@
     return ws;
   }
 
+  // Mengelompokkan rincian program berdasarkan tahun dan perangkat daerah.
+  // Semua angka akan ikut berubah setelah data ditambah, diedit, atau dihapus.
+  function calculateAgencyTotals(rows) {
+    const grouped = new Map();
+    (rows || []).forEach(r => {
+      const agency = clean(r.perangkat_daerah) || 'Belum ditentukan';
+      const year = Number(r.tahun) || 0;
+      const key = `${year}||${agency.toLocaleLowerCase('id')}`;
+      if (!grouped.has(key)) grouped.set(key, {
+        tahun: year,
+        perangkat_daerah: agency,
+        sumber_sheet: 'Otomatis dari data program',
+        total_target: 0,
+        total_capaian: 0,
+        total_anggaran: 0,
+        total_realisasi: 0
+      });
+      const total = grouped.get(key);
+      total.total_target += Number(r.target) || 0;
+      total.total_capaian += Number(r.capaian) || 0;
+      total.total_anggaran += Number(r.anggaran) || 0;
+      total.total_realisasi += Number(r.realisasi_anggaran) || 0;
+    });
+    return [...grouped.values()].sort((a,b) =>
+      a.tahun - b.tahun || a.perangkat_daerah.localeCompare(b.perangkat_daerah, 'id')
+    );
+  }
+
   function totalsForRows(rows) {
-    const years = new Set((rows || []).map(r => Number(r.tahun)));
-    const agencies = new Set((rows || []).map(r => r.perangkat_daerah));
     const selectedBatch = $('filterBatch')?.value || '';
     const selectedYear = $('filterYear')?.value || '';
     const selectedAgency = $('filterAgency')?.value || '';
-    return state.importTotals.filter(t => {
-      if (selectedBatch && selectedBatch !== '__old__' && t.import_batch_id !== selectedBatch) return false;
-      if (selectedBatch === '__old__') return false;
-      if (selectedYear && String(t.tahun) !== selectedYear) return false;
-      if (selectedAgency && t.perangkat_daerah !== selectedAgency) return false;
-      if (years.size && !selectedYear && !years.has(Number(t.tahun))) return false;
-      if (agencies.size && !selectedAgency && !agencies.has(t.perangkat_daerah)) return false;
-      return true;
+    const sourceRows = state.records.filter(r => {
+      if (selectedBatch && selectedBatch !== '__old__' && r.import_batch_id !== selectedBatch) return false;
+      if (selectedBatch === '__old__' && r.import_batch_id) return false;
+      if (selectedYear && String(r.tahun) !== selectedYear) return false;
+      if (selectedAgency && r.perangkat_daerah !== selectedAgency) return false;
+      return !rows?.length || rows.some(x => x.id === r.id);
     });
+    return calculateAgencyTotals(sourceRows);
   }
 
   function totalsForReportRows() {
     const selectedYear = $('reportYear')?.value || '';
     const selectedAgency = $('reportAgency')?.value || '';
-    return state.importTotals.filter(t =>
-      (!selectedYear || String(t.tahun) === String(selectedYear)) &&
-      (!selectedAgency || t.perangkat_daerah === selectedAgency)
-    );
+    return calculateAgencyTotals(state.records.filter(r =>
+      (!selectedYear || String(r.tahun) === String(selectedYear)) &&
+      (!selectedAgency || r.perangkat_daerah === selectedAgency)
+    ));
   }
 
   const totalExportColumns = [
@@ -741,16 +768,13 @@
     $('reportRows').innerHTML = arr.length
       ? arr.map(r => `<tr><td>${escapeHtml(r.name)}</td><td>${number(r.count)}</td><td>${number(r.target)}</td><td>${money(r.budget)}</td><td>${money(r.realization)}</td><td>${r.budget ? (r.realization / r.budget * 100).toLocaleString('id-ID', { maximumFractionDigits: 1 }) : '0'}%</td></tr>`).join('')
       : '<tr><td colspan="6" class="empty-cell">Belum ada data untuk direkap. Periksa filter tahun/perangkat daerah atau pastikan data sudah diimpor.</td></tr>';
-    const importedTotals = state.importTotals.filter(t =>
-      (!selectedYear || selectedYear === 'Semua tahun' || String(t.tahun) === String(selectedYear)) &&
-      (!selectedAgency || selectedAgency === 'Semua perangkat daerah' || t.perangkat_daerah === selectedAgency)
-    );
+    const calculatedTotals = calculateAgencyTotals(rows);
     const reportTotalsBody = $('reportImportedTotalsRows');
-    if (reportTotalsBody) reportTotalsBody.innerHTML = importedTotals.length ? importedTotals.map(t => `<tr>
-      <td>${t.tahun}</td><td>${escapeHtml(t.perangkat_daerah)}</td><td>${escapeHtml(t.sumber_sheet || '')}</td>
-      <td>${t.total_target == null ? '—' : number(t.total_target)}</td><td>${t.total_capaian == null ? '—' : number(t.total_capaian)}</td>
-      <td>${t.total_anggaran == null ? '—' : money(t.total_anggaran)}</td><td>${t.total_realisasi == null ? '—' : money(t.total_realisasi)}</td>
-    </tr>`).join('') : '<tr><td colspan="7" class="empty-cell">Belum ada total dari file Excel untuk filter ini.</td></tr>';
+    if (reportTotalsBody) reportTotalsBody.innerHTML = calculatedTotals.length ? calculatedTotals.map(t => `<tr>
+      <td>${t.tahun}</td><td>${escapeHtml(t.perangkat_daerah)}</td><td>Otomatis dari data program</td>
+      <td>${number(t.total_target)}</td><td>${number(t.total_capaian)}</td>
+      <td>${money(t.total_anggaran)}</td><td>${money(t.total_realisasi)}</td>
+    </tr>`).join('') : '<tr><td colspan="7" class="empty-cell">Belum ada data program untuk dihitung.</td></tr>';
   }
 
   function getReportSummary() {
